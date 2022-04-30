@@ -20,4 +20,6 @@ jekyll new myjkl
 cd myjkl
 
 ~/myjkl # bundle exec jekyll serve
+
+Could not locate Gemfile or .bundle/ directory
 -----------------------------------------------

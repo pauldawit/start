@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Smart Todo List</title>
+    <link
+      href="https://cdn.quilljs.com/1.3.6/quill.snow.css"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+    <style>
+      body {
+        display: flex;
+        gap: 20px;
+        font-family: Arial, sans-serif;
+        margin: 20px;
+      }
+      #todo-section,
+      #chat-section {
+        flex: 1;
+        border: 1px solid #ccc;
+        padding: 10px;
+        border-radius: 8px;
+        max-height: 90vh;
+        overflow-y: auto;
+      }
+      .todo-item {
+        border: 1px solid #ddd;
+        padding: 10px;
+        margin-bottom: 5px;
+        border-radius: 4px;
+        background: #fafafa;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .todo-actions button {
+        margin-right: 5px;
+      }
+      #editor {
+        height: 100px;
+      }
+      #chat-messages {
+        height: 70vh;
+        overflow-y: auto;
+        border: 1px solid #ddd;
+        padding: 5px;
+        margin-bottom: 10px;
+      }
+      .message {
+        margin-bottom: 8px;
+      }
+      .message.user {
+        text-align: right;
+      }
+      .attachments {
+        font-size: 0.9em;
+        color: #555;
+      }
+    </style>
+  </head>
+  <body>
+    <section id="todo-section">
+      <h2>Smart Todo List</h2>
+      <div id="editor"></div>
+      <input type="date" id="dueDate" />
+      <input type="file" id="fileInput" multiple />
+      <div>
+        <button id="addBtn">Add Task</button>
+        <button id="cancelBtn" style="display: none">Cancel</button>
+        <button id="saveAllBtn">Save All</button>
+      </div>
+      <div id="todoList"></div>
+    </section>
+
+    <section id="chat-section">
+      <h2>ChatGPT Helper</h2>
+      <input type="password" id="apiKey" placeholder="OpenAI API Key" />
+      <div id="chat-messages"></div>
+      <textarea id="chatInput" rows="2" placeholder="Ask ChatGPT..."></textarea>
+      <button id="sendBtn">Send</button>
+    </section>
+
+    <script>
+      // ---- Todo List Logic ----
+      const quill = new Quill("#editor", { theme: "snow" });
+      const todoListEl = document.getElementById("todoList");
+      const dueDateEl = document.getElementById("dueDate");
+      const fileInputEl = document.getElementById("fileInput");
+      const addBtn = document.getElementById("addBtn");
+      const cancelBtn = document.getElementById("cancelBtn");
+      const saveAllBtn = document.getElementById("saveAllBtn");
+      let todos = [];
+      let editIndex = null;
+
+      function renderTodos() {
+        todoListEl.innerHTML = "";
+        todos.forEach((todo, index) => {
+          const item = document.createElement("div");
+          item.className = "todo-item";
+          item.dataset.index = index;
+          item.innerHTML = `
+          <div class="content">${todo.content}</div>
+          <div class="attachments">${todo.attachments.join(", ")}</div>
+          <div>Due: ${todo.dueDate || ""}</div>
+          <div class="todo-actions">
+            <button class="edit">Edit</button>
+            <button class="delete">Delete</button>
+            <button class="copy">Copy</button>
+          </div>
+        `;
+          todoListEl.appendChild(item);
+        });
+      }
+
+      function saveTodos() {
+        localStorage.setItem("smartTodos", JSON.stringify(todos));
+      }
+
+      function loadTodos() {
+        const data = localStorage.getItem("smartTodos");
+        if (data) {
+          todos = JSON.parse(data);
+          renderTodos();
+        }
+      }
+
+      addBtn.addEventListener("click", () => {
+        const content = quill.root.innerHTML.trim();
+        if (!content) return;
+        const dueDate = dueDateEl.value;
+        const attachments = Array.from(fileInputEl.files).map((f) => f.name);
+        if (editIndex !== null) {
+          todos[editIndex] = { content, dueDate, attachments };
+          editIndex = null;
+          addBtn.textContent = "Add Task";
+          cancelBtn.style.display = "none";
+        } else {
+          todos.push({ content, dueDate, attachments });
+        }
+        quill.setContents([]);
+        dueDateEl.value = "";
+        fileInputEl.value = "";
+        renderTodos();
+        saveTodos();
+      });
+
+      cancelBtn.addEventListener("click", () => {
+        quill.setContents([]);
+        dueDateEl.value = "";
+        fileInputEl.value = "";
+        editIndex = null;
+        addBtn.textContent = "Add Task";
+        cancelBtn.style.display = "none";
+      });
+
+      saveAllBtn.addEventListener("click", saveTodos);
+
+      todoListEl.addEventListener("click", (e) => {
+        const parent = e.target.closest(".todo-item");
+        if (!parent) return;
+        const index = parent.dataset.index;
+        if (e.target.classList.contains("delete")) {
+          todos.splice(index, 1);
+          renderTodos();
+          saveTodos();
+        } else if (e.target.classList.contains("edit")) {
+          const todo = todos[index];
+          quill.root.innerHTML = todo.content;
+          dueDateEl.value = todo.dueDate;
+          // file attachments cannot be re-populated for security
+          editIndex = parseInt(index, 10);
+          addBtn.textContent = "Update Task";
+          cancelBtn.style.display = "inline";
+        } else if (e.target.classList.contains("copy")) {
+          const temp = document.createElement("div");
+          temp.innerHTML = todos[index].content;
+          navigator.clipboard.writeText(temp.innerText);
+        }
+      });
+
+      new Sortable(todoListEl, {
+        animation: 150,
+        onEnd: () => {
+          const newTodos = [];
+          todoListEl.querySelectorAll(".todo-item").forEach((item) => {
+            newTodos.push(todos[item.dataset.index]);
+          });
+          todos = newTodos;
+          renderTodos();
+          saveTodos();
+        },
+      });
+
+      loadTodos();
+
+      // ---- ChatGPT Logic ----
+      const apiKeyEl = document.getElementById("apiKey");
+      const chatMessagesEl = document.getElementById("chat-messages");
+      const chatInputEl = document.getElementById("chatInput");
+      const sendBtn = document.getElementById("sendBtn");
+      const chatHistory = [];
+
+      function appendMessage(role, text) {
+        const div = document.createElement("div");
+        div.className = `message ${role}`;
+        div.textContent = text;
+        chatMessagesEl.appendChild(div);
+        chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+      }
+
+      sendBtn.addEventListener("click", async () => {
+        const apiKey = apiKeyEl.value.trim();
+        const content = chatInputEl.value.trim();
+        if (!apiKey || !content) return;
+        appendMessage("user", content);
+        chatHistory.push({ role: "user", content });
+        chatInputEl.value = "";
+        try {
+          const res = await fetch(
+            "https://api.openai.com/v1/chat/completions",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${apiKey}`,
+              },
+              body: JSON.stringify({
+                model: "gpt-4o-mini",
+                messages: chatHistory,
+              }),
+            },
+          );
+          const data = await res.json();
+          const reply = data.choices?.[0]?.message?.content || "No response";
+          appendMessage("assistant", reply);
+          chatHistory.push({ role: "assistant", content: reply });
+        } catch (err) {
+          appendMessage("assistant", "Error: " + err.message);
+        }
+      });
+    </script>
+  </body>
+</html>
